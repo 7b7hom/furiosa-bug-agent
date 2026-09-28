@@ -1,3 +1,5 @@
+<div align="center">
+
 # 🐛 furiosa-bug-agent
 
 **Bug Memory** — FuriosaAI RNGD 기반 **사내 버그 지식 공유 Agent**
@@ -7,6 +9,8 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)
 ![LangSmith](https://img.shields.io/badge/LangSmith-1C3C3C?logo=langchain&logoColor=white)
 ![FuriosaAI RNGD](https://img.shields.io/badge/FuriosaAI-RNGD-615CED)
+
+</div>
 
 에러 스크린샷(또는 텍스트)을 넣으면, 팀이 쌓아온 과거 버그 기록에서 비슷한 사례를 찾아 원인과 해결법을 정리해주는 에이전트입니다.
 
