@@ -1,137 +1,126 @@
 <div align="center">
 
-# 🐛 furiosa-bug-agent
+# 🐛 Bug Memory
 
-**Bug Memory** — FuriosaAI RNGD 기반 **사내 버그 지식 공유 Agent**
+**FuriosaAI RNGD 기반 사내 버그 지식 공유 Agent**
 
 ![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1C3C3C?logo=langgraph&logoColor=white)
-![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white)
-![LangSmith](https://img.shields.io/badge/LangSmith-1C3C3C?logo=langchain&logoColor=white)
 ![FuriosaAI RNGD](https://img.shields.io/badge/FuriosaAI-RNGD-615CED)
+
+**7b7hom · C 담당 — Multi-Agent 분석**
 
 </div>
 
-에러 스크린샷(또는 텍스트)을 넣으면, 팀이 쌓아온 과거 버그 기록에서 비슷한 사례를 찾아 원인과 해결법을 정리해주는 에이전트입니다.
+에러 스크린샷이나 텍스트를 입력하면 과거 버그 사례를 찾아 **원인·해결 방법·재발 방지 조치**를 정리하는 에이전트입니다. 사람이 승인한 결과를 팀의 버그 기록으로 저장해, 같은 문제를 다시 만났을 때 참고할 수 있도록 만들었습니다.
 
-Claude나 ChatGPT에 그때그때 물어보면 대화가 끝나는 순간 답도 사라집니다. 이 에이전트는 **사람이 승인한 분석 결과를 팀이 검색할 수 있는 지식으로 계속 쌓아서**, 같은 에러가 다시 발생하면 즉시 재발로 감지합니다.
+숭실대학교 FuriosaAI RNGD 단기강좌의 **4인 팀 미니 프로젝트**이며, 저는 **LangGraph 기반 분석 모듈(C)**을 담당했습니다. 이 저장소는 [팀 프로젝트](https://github.com/sojjeoi/furiosa-bug-agent)를 바탕으로 제 기여를 정리한 개인 저장소입니다.
 
-> 4인 팀 미니 프로젝트
+## 내가 맡은 부분
+
+핵심 구현 파일은 [app/agent.py](app/agent.py)입니다. 입력된 에러가 원인 분석부터 해결책 정리까지 이어지도록 분석 흐름과 노드 간 상태를 구현했습니다.
+
+| 구현 내용 | 담당한 작업 |
+|---|---|
+| **분석 흐름 구성** | `AnalysisState`와 5개 노드를 정의하고, 원인 분석·유사 사례 검토를 병렬로 시작한 뒤 재발 판정 → 예방 조치 → 결과 종합으로 연결 |
+| **근본 원인 분석** | GPT-OSS-120B에 에러 메시지·코드·추가 맥락을 전달해 원인을 설명하는 `root_cause_node` 구현 |
+| **유사 사례 검토와 웹 검색** | A 담당의 검색 함수와 연동하고, LLM의 Tool Calling으로 DuckDuckGo 검색 실행 및 검색 결과를 다시 LLM에 전달하는 흐름 구현 |
+| **재발 판정** | 검색 점수와 원인 비교를 이용해 `confirmed / possible / new`로 구분하는 초기 `recurrence_node` 구현 |
+| **해결책과 결과 생성** | 즉시 조치·예방 조치·태그를 JSON으로 받고, 저장용 `BugRecord`와 초기 화면용 Markdown 생성 로직 구현 |
+
+[C 파트 최초 구현 커밋](https://github.com/7b7hom/furiosa-bug-agent/commit/3a3bcc15e130797e88b5706b79b260f89ec78fe1)에서 기여 범위를 확인할 수 있습니다. 이후 팀 통합 과정에서 프롬프트, 재발 판정 방식, 화면 렌더링 역할이 조정되었습니다.
+
+## C 파트 분석 흐름
+
+```mermaid
+flowchart TD
+    input["에러 메시지 · 코드 · 추가 맥락"] --> root["근본 원인 분석"]
+    input --> similar["유사 사례 검토 · 필요 시 웹 검색"]
+    rag["A 담당: 내부 버그 검색"] --> similar
+    root --> recurrence["재발 판정"]
+    similar --> recurrence
+    recurrence --> prevention["즉시 조치 · 예방 조치 생성"]
+    prevention --> aggregate["구조화된 BugRecord 생성"]
+    aggregate --> ui["D 담당: 화면 표시 · 사람 승인"]
+```
+
+웹 검색은 `tool_choice="auto"`로 LLM이 호출 여부를 결정합니다. 내부 후보가 없거나 검색 점수가 낮으면 검색하도록 프롬프트로 안내하고, 검색 결과를 `tool` 메시지로 다시 전달해 후속 분석에 활용합니다. 검색한 출처의 URL과 확인 시각도 결과에 남깁니다.
+
+분석 모듈은 기록을 직접 저장하지 않습니다. D 담당 화면에서 사용자가 승인한 뒤 A 담당의 저장 함수를 호출하도록 역할을 나눴습니다.
+
+### 초기 구현과 현재 버전의 차이
+
+- **재발 판정:** 초기에는 검색 점수와 원인 비교로 3단계 판정을 구현했습니다. 현재 팀 통합 버전은 데모 안정성을 위해, 후보 검토 후 남은 후보가 있으면 `confirmed`, 없으면 `new`로 단순화했습니다. 현재 판정 노드가 점수 임계값이나 원인 일치를 직접 검사하는 것은 아닙니다.
+- **화면 표시:** 초기 C 구현은 저장용 데이터와 화면용 Markdown을 각각 만들었습니다. 현재는 C가 `record`를 생성하고 D의 `ui.py`가 화면을 렌더링합니다.
+
+## 구현하면서 다룬 문제
+
+| 문제 | 대응 |
+|---|---|
+| **도구 호출을 강제했을 때 빈 응답 발생** | 당시 강좌 엔드포인트에서 `tool_choice="required"`나 특정 함수 강제 지정이 정상 동작하지 않아, `auto`와 명시적인 검색 조건을 사용 |
+| **추론 토큰 때문에 응답이 잘리는 현상** | GPT-OSS-120B 호출 목적에 따라 응답 토큰 한도를 조정. 초기 원인 비교는 200, 원인 분석·예방 조치 생성은 800으로 설정 |
+| **노드 결과를 다른 모듈에 전달하는 방식** | 원인·후보·외부 근거·판정·예방 조치를 `AnalysisState`로 나누고, 마지막에 저장용 구조로 종합 |
+
+위 내용은 당시 구현·확인한 범위입니다. 도구 호출 성공률이나 재발 판정 정확도를 별도 벤치마크로 검증한 것은 아닙니다.
 
 ## 실행 화면
 
-에러 스크린샷 입력부터 재발 감지, 원인 분석, 과거 사례 참조, 사람 승인까지 이어지는 실제 실행 화면입니다.
+팀 통합 버전의 실제 실행 화면입니다. 에러 입력부터 분석 결과, 과거 사례 확인, 사람 승인까지 이어집니다.
 
 <p align="center">
-  <img src="assets/demo-showcase.png" alt="Bug Memory 실행 화면 — ① 에러 스크린샷 입력 ② 재발 감지 · 원인 분석 ③ 과거 사례 참조 · 사람 승인" width="100%">
+  <img src="assets/demo-showcase.png" alt="Bug Memory 팀 실행 화면 — 에러 입력, 재발 판정과 원인 분석, 과거 사례 참조 및 사람 승인" width="100%">
 </p>
 
-## 주요 기능
+## 팀 역할
 
-| 기능 | 설명 |
-|---|---|
-| **스크린샷 입력** | 터미널 캡처를 올리면 비전 모델(Qwen3-VL)이 에러 타입·메시지·문제 코드를 추출합니다. 텍스트를 붙여넣어도 됩니다. |
-| **과거 사례 검색** | 팀 버그 코퍼스를 임베딩으로 검색한 뒤 리랭커로 재정렬해, 가장 비슷한 과거 사례를 찾습니다. |
-| **멀티 에이전트 분석** | LangGraph로 `원인 분석`과 `유사 사례 판단`을 병렬로 실행한 뒤, 결과를 합쳐 재발 판정과 예방 조치 생성으로 넘깁니다. |
-| **재발 감지** | 리랭커 점수가 기준(0.5) 이상인 과거 사례가 있으면 `재발`로 판정하고, 해당 사례의 발생 횟수를 올립니다. |
-| **웹 검색 보완** | 기준을 넘는 내부 사례가 없으면 에이전트가 DuckDuckGo로 공식 문서·알려진 이슈를 찾아봅니다. |
-| **사람 승인 (HITL)** | 분석 결과는 사람이 **[승인하고 저장]**을 눌러야만 코퍼스에 반영됩니다. 잘못된 분석이 팀 지식으로 쌓이지 않도록 막습니다. |
-| **실행 추적** | LangSmith로 각 LLM 호출과 노드별 소요 시간을 추적합니다. |
-
-## 아키텍처
-
-<p align="center">
-  <img src="docs/architecture.svg" alt="furiosa-bug-agent 아키텍처" width="100%">
-</p>
-
-| 모듈 | 파일 | 역할 |
+| 담당 | 역할 | 주요 파일 |
 |---|---|---|
-| RAG | `app/rag.py` | 코퍼스(`app/bugs.json`) 검색·저장, 임베딩 + 리랭커 |
-| Vision | `app/vision.py` | 스크린샷 OCR, 텍스트·이미지 입력 통합 |
-| Agent | `app/agent.py` | LangGraph 기반 멀티 에이전트 분석 (원인 분석 · 재발 판정 · 예방 조치) |
-| **UI (본인 담당)** | `app/ui.py` | Streamlit 화면, HITL 승인, LangSmith 연동 |
+| A | 버그 코퍼스 검색·저장, 임베딩·리랭킹 | [rag.py](app/rag.py) |
+| B | 스크린샷 OCR, 텍스트·이미지 입력 정리 | [vision.py](app/vision.py) |
+| **C · 7b7hom** | **LangGraph 분석 노드, Tool Calling, 재발 판정, 해결책 생성** | [agent.py](app/agent.py) |
+| D | Streamlit UI, 사람 승인, LangSmith 추적 | [ui.py](app/ui.py) |
 
-### 사용 모델
+C 파트에서는 **Python · LangGraph · OpenAI SDK · GPT-OSS-120B · DuckDuckGo(ddgs)**를 사용했습니다. 팀 전체 시스템에는 Qwen3-VL, Qwen3-Embedding, Qwen3-Reranker, Streamlit, LangSmith를 함께 사용했습니다.
 
-모든 모델은 FuriosaAI RNGD 추론 엔드포인트에서 서빙됩니다.
+<details>
+<summary>전체 시스템 아키텍처 보기</summary>
 
-| 모델 | 용도 |
-|---|---|
-| Qwen3-VL-32B-Instruct | 에러 스크린샷 OCR |
-| GPT-OSS-120B | 원인 분석 · 유사 사례 판단 · 예방 조치 생성 |
-| Qwen3-Embedding-8B | 코퍼스 벡터 검색 |
-| Qwen3-Reranker-8B | 검색 결과 재정렬 |
+![Bug Memory 전체 아키텍처](docs/architecture.svg)
 
-## 개발하며 해결한 문제
-
-- **도구 호출을 강제하면 응답이 비어버리는 문제**: 이 서빙 환경에서 `tool_choice`를 `required`나 특정 함수로 강제하면 응답이 통째로 빈 채 돌아왔습니다. `tool_choice="auto"`만 쓰고, "리랭커 점수가 0.5 미만이면 반드시 웹 검색을 호출하라"는 규칙을 프롬프트에 명시하는 방식으로 해결했습니다.
-- **추론 모델의 답변 잘림**: GPT-OSS-120B는 답하기 전에 추론 토큰을 먼저 소모해서, `max_tokens`를 짧게 잡으면 JSON이 중간에 끊겼습니다. 호출 목적에 맞게 토큰 한도를 넉넉하게 조정했습니다.
-- **재발 판정의 불안정성**: 처음에는 LLM이 `재발 / 재발 가능성 / 신규` 세 단계로 판정했지만, 같은 입력에도 결과가 매번 흔들렸습니다. 데모 신뢰성을 위해 리랭커 점수를 기준으로 재발 여부를 판정하도록 단순화했습니다.
-- **프롬프트 품질 편차**: 모든 프롬프트를 역할·목표·맥락·출력형식(Role/Task/Context/Format) 구조와 few-shot 예시로 통일했습니다.
-
-## 프로젝트 구조
-
-```
-furiosa-bug-agent/
-├── app/            실행 코드 — agent.py / rag.py / ui.py / vision.py / bugs.json
-│                   stubs.py (UI 개발용 가짜 구현), test_rag.py (RAG 유닛 테스트)
-├── docs/           모듈별 설계 메모 (AGENT.md), 아키텍처 다이어그램
-├── assets/         README용 실행 화면
-├── requirements.txt
-├── README.md
-└── CLAUDE.md       AI 코딩 도구 작업 규칙 (루트 고정 — 도구가 자동으로 읽음)
-```
+</details>
 
 ## 설치 및 실행
 
-> **참고**: 이 프로젝트는 FuriosaAI RNGD 강좌 기간에 한시적으로 제공된 API 엔드포인트와 키를 사용했습니다. 강좌가 끝나 현재는 해당 API에 접근할 수 없으므로, 직접 실행하려면 FuriosaAI RNGD API 키(또는 호환 엔드포인트)를 새로 발급받아야 합니다. 위 실행 화면은 강좌 기간 중 실제로 실행한 결과입니다.
-
-### 1. 설치
+> 강좌에서 제공한 API의 이용 기간이 종료되어, 실행하려면 사용 가능한 API 키와 엔드포인트가 필요합니다. 다른 서비스를 연결할 경우 코드의 엔드포인트·모델 설정도 맞춰야 합니다. 위 화면은 강좌 기간의 실행 기록입니다.
 
 ```bash
-git clone https://github.com/sojjeoi/furiosa-bug-agent.git
+git clone https://github.com/7b7hom/furiosa-bug-agent.git
 cd furiosa-bug-agent
 python -m pip install -r requirements.txt
 ```
 
-> **Windows에서 `pip install`이나 `streamlit` 명령이 "command not found"라고 나오면**, PATH에 잡혀 있지 않은 것입니다. `pip install ...` 대신 `python -m pip install ...`처럼 `python -m`을 붙여서 실행하세요. 아래 실행 명령도 마찬가지입니다.
+프로젝트 루트에 `.env`를 만들고 모델별 키를 설정합니다.
 
-### 2. API 키 설정
+```dotenv
+FURIOSA_VL_API_KEY=your_vision_api_key
+FURIOSA_LLM_API_KEY=your_llm_api_key
+FURIOSA_EMBEDDING_API_KEY=your_embedding_api_key
+FURIOSA_RERANKER_API_KEY=your_reranker_api_key
 
-프로젝트 루트에 `.env` 파일을 만들고 아래 내용을 채우세요. 모델별 키는 강좌에서 배포한 "FuriosaAI RNGD 실습 가이드" 문서에서 확인할 수 있습니다.
-
+# 선택: 실행 추적
+LANGSMITH_API_KEY=your_langsmith_api_key
 ```
-FURIOSA_VL_API_KEY=...          # Qwen3-VL-32B-Instruct (화면 OCR)
-FURIOSA_LLM_API_KEY=...         # GPT-OSS-120B (분석)
-FURIOSA_EMBEDDING_API_KEY=...   # Qwen3-Embedding-8B (검색)
-FURIOSA_RERANKER_API_KEY=...    # Qwen3-Reranker-8B (검색)
-```
-
-**(선택) LangSmith 추적**: 실행 과정을 [smith.langchain.com](https://smith.langchain.com)에서 시각적으로 보고 싶다면 아래 줄을 추가하세요. 없어도 앱은 정상 작동합니다.
-
-```
-LANGSMITH_API_KEY=...
-```
-
-`.env`는 `.gitignore`에 포함되어 있어 커밋되지 않습니다. **API 키를 코드나 GitHub에 직접 올리지 마세요.**
-
-### 3. 실행
 
 ```bash
 python -m streamlit run app/ui.py
 ```
 
-브라우저가 자동으로 열립니다. 에러 메시지를 텍스트로 붙여넣거나 스크린샷을 업로드한 뒤 **[분석 시작]**을 누르면 됩니다. 분석 결과를 확인하고 **[승인하고 저장]**을 눌러야만 팀 코퍼스(`app/bugs.json`)에 반영됩니다.
+에러 텍스트나 스크린샷을 입력하고 **분석 시작 → 결과 확인 → 승인하고 저장** 순서로 사용합니다. `.env`는 Git에 올리지 않습니다.
 
-> 첫 분석은 여러 LLM 호출이 순차적으로 이어져서 시간이 다소 걸립니다. 정상 동작이며, LangSmith 트레이스에서 단계별 소요 시간을 확인할 수 있습니다.
+## 한계와 개선 방향
 
-### 4. 데모 시나리오
+현재 재발 판정은 데모용으로 단순화되어 있어, 같은 메시지라도 원인이 다른 사례를 구분하는 검증이 더 필요합니다. 예방 조치는 제안만 하며, 실제 코드 수정과 테스트는 사용자가 수행합니다. 검색 결과의 신뢰도 검증과 민감정보 자동 마스킹도 후속 과제입니다.
 
-1. **신규 사례**: 코퍼스에 없는 새 에러 입력 → `신규` 판정 확인
-2. **재발 감지**: 방금 승인한 것과 동일한 에러를 다시 입력 → `기존 사례와 동일한 원인으로 재발` 경고와 함께 발생 횟수가 올라가는지 확인
+[팀 원본 저장소](https://github.com/sojjeoi/furiosa-bug-agent) · [현재 분석 코드](app/agent.py) · [C 파트 초기 설계 메모](docs/AGENT.md)
 
-## Non-goals (이번 범위에서 하지 않는 것)
-
-- 실제 Slack/Notion 채널 연동, 사용자 인증, 여러 프로젝트·조직 동시 지원
-- 예방 조치의 자동 적용·자동 검증(테스트 실행 등) — 제안까지만 하고 실제 적용은 사람이 직접 함
-- 자동 민감정보 마스킹 — 업로드 전 육안 확인 원칙으로 대체
+`docs/AGENT.md`는 초기 구현 당시의 기록으로, 현재 통합 버전과 일부 차이가 있습니다.
