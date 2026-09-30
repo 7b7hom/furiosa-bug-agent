@@ -8,7 +8,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-1C3C3C?logo=langgraph&logoColor=white)
 ![FuriosaAI RNGD](https://img.shields.io/badge/FuriosaAI-RNGD-615CED)
 
-**7b7hom · C 담당 — Multi-Agent 분석**
+**담당 — Multi-Agent 분석**
 
 </div>
 
@@ -16,7 +16,7 @@
 
 숭실대학교 FuriosaAI RNGD 단기강좌의 **4인 팀 미니 프로젝트**이며, 저는 **LangGraph 기반 분석 모듈(C)**을 담당했습니다. 이 저장소는 [팀 프로젝트](https://github.com/sojjeoi/furiosa-bug-agent)를 바탕으로 제 기여를 정리한 개인 저장소입니다.
 
-## 내가 맡은 부분
+## 맡은 부분
 
 핵심 구현 파일은 [app/agent.py](app/agent.py)입니다. 입력된 에러가 원인 분석부터 해결책 정리까지 이어지도록 분석 흐름과 노드 간 상태를 구현했습니다.
 
@@ -27,8 +27,6 @@
 | **유사 사례 검토와 웹 검색** | A 담당의 검색 함수와 연동하고, LLM의 Tool Calling으로 DuckDuckGo 검색 실행 및 검색 결과를 다시 LLM에 전달하는 흐름 구현 |
 | **재발 판정** | 검색 점수와 원인 비교를 이용해 `confirmed / possible / new`로 구분하는 초기 `recurrence_node` 구현 |
 | **해결책과 결과 생성** | 즉시 조치·예방 조치·태그를 JSON으로 받고, 저장용 `BugRecord`와 초기 화면용 Markdown 생성 로직 구현 |
-
-[C 파트 최초 구현 커밋](https://github.com/7b7hom/furiosa-bug-agent/commit/3a3bcc15e130797e88b5706b79b260f89ec78fe1)에서 기여 범위를 확인할 수 있습니다. 이후 팀 통합 과정에서 프롬프트, 재발 판정 방식, 화면 렌더링 역할이 조정되었습니다.
 
 ## C 파트 분석 흐름
 
@@ -77,10 +75,11 @@ flowchart TD
 |---|---|---|
 | A | 버그 코퍼스 검색·저장, 임베딩·리랭킹 | [rag.py](app/rag.py) |
 | B | 스크린샷 OCR, 텍스트·이미지 입력 정리 | [vision.py](app/vision.py) |
-| **C · 7b7hom** | **LangGraph 분석 노드, Tool Calling, 재발 판정, 해결책 생성** | [agent.py](app/agent.py) |
+| **C** | **LangGraph 분석 노드, Tool Calling, 재발 판정, 해결책 생성** | [agent.py](app/agent.py) |
 | D | Streamlit UI, 사람 승인, LangSmith 추적 | [ui.py](app/ui.py) |
 
-C 파트에서는 **Python · LangGraph · OpenAI SDK · GPT-OSS-120B · DuckDuckGo(ddgs)**를 사용했습니다. 팀 전체 시스템에는 Qwen3-VL, Qwen3-Embedding, Qwen3-Reranker, Streamlit, LangSmith를 함께 사용했습니다.
+C 파트에서는 **Python · LangGraph · OpenAI SDK · GPT-OSS-120B · DuckDuckGo(ddgs)**를 사용했습니다. 
+팀 전체 시스템에는 Qwen3-VL, Qwen3-Embedding, Qwen3-Reranker, Streamlit, LangSmith를 함께 사용했습니다.
 
 <details>
 <summary>전체 시스템 아키텍처 보기</summary>
@@ -91,7 +90,7 @@ C 파트에서는 **Python · LangGraph · OpenAI SDK · GPT-OSS-120B · DuckDuc
 
 ## 설치 및 실행
 
-> 강좌에서 제공한 API의 이용 기간이 종료되어, 실행하려면 사용 가능한 API 키와 엔드포인트가 필요합니다. 다른 서비스를 연결할 경우 코드의 엔드포인트·모델 설정도 맞춰야 합니다. 위 화면은 강좌 기간의 실행 기록입니다.
+> 실행하려면 사용 가능한 API 키와 엔드포인트가 필요합니다. 다른 서비스를 연결할 경우 코드의 엔드포인트·모델 설정도 맞춰야 합니다.
 
 ```bash
 git clone https://github.com/7b7hom/furiosa-bug-agent.git
@@ -115,12 +114,10 @@ LANGSMITH_API_KEY=your_langsmith_api_key
 python -m streamlit run app/ui.py
 ```
 
-에러 텍스트나 스크린샷을 입력하고 **분석 시작 → 결과 확인 → 승인하고 저장** 순서로 사용합니다. `.env`는 Git에 올리지 않습니다.
+에러 텍스트나 스크린샷을 입력하고 **분석 시작 → 결과 확인 → 승인하고 저장** 순서로 사용합니다.
 
 ## 한계와 개선 방향
 
 현재 재발 판정은 데모용으로 단순화되어 있어, 같은 메시지라도 원인이 다른 사례를 구분하는 검증이 더 필요합니다. 예방 조치는 제안만 하며, 실제 코드 수정과 테스트는 사용자가 수행합니다. 검색 결과의 신뢰도 검증과 민감정보 자동 마스킹도 후속 과제입니다.
 
 [팀 원본 저장소](https://github.com/sojjeoi/furiosa-bug-agent) · [현재 분석 코드](app/agent.py) · [C 파트 초기 설계 메모](docs/AGENT.md)
-
-`docs/AGENT.md`는 초기 구현 당시의 기록으로, 현재 통합 버전과 일부 차이가 있습니다.
